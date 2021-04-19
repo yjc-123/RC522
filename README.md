@@ -5,6 +5,7 @@ Rc522 card recognition based on SPI
 ##### 1、简介
 SPI才用master/slave模式，一个master管理多个slave，通过SS片选信号实现主机控制某一个从机，SPI属于同步全双工传输协议。spi工作机制是master跟slave都有移位寄存器，也就是说master发送一位在FIFODATA中slave也会相应的发送一位到FIFODATA中，发送完一个字节之后，master发送完成，svale也相应的给FIFODATA写了一个字节，master直接读取就行了。但是真正读数据的时候data sheet中是这样告诉我们的
 ![image](https://github.com/yjc-123/RC522/blob/master/images/%E8%AF%BB.jpg)
+
 我们要先下寄存器，然后再发送一个字节，这个字节数据可以随意一般为0，才能够获取到数据。
 SPI有四根线分别是：
 + MOSI：Master Output Slave Input，顾名思义，即主设备输出/从设备输入。数据从主机输出到从机，主机发送数据。
@@ -71,6 +72,34 @@ struct spi_ioc_transfer {
 2、初始化传输方式，有四种
 3、初始化位模式
 4、初始化传输速度
+```
+下面的代码是spi读取的代码。
+```
+unsigned char  spi_read(int fd, unsigned char  *opt)
+{
+    int ret;
+    unsigned char  tx[2];
+    unsigned char  rx[2];
+    tx[0] = opt[0];
+    tx[1] = opt[1];
+    struct spi_ioc_transfer tr;
+    memset(&tr, 0, sizeof(tr));
+    tr.tx_buf = (unsigned long)tx;
+    tr.rx_buf = (unsigned long)rx;
+    tr.len = 2;
+    tr.delay_usecs = delay_spi;
+    tr.speed_hz = speed_spi;
+    tr.bits_per_word = bits_spi;
+    ret = ioctl(fd, SPI_IOC_MESSAGE(1), &tr);
+    if (ret < 1)
+    {
+        printf("错误是%s\n",strerror(errno));
+        printf("can't write spi message\n");
+        return -1;
+    }
+    unsigned r = rx[1];  //发送两个字节回来也是两个字节，但是第一个字节是空，第二个字节才是数据
+    return r; 
+}
 ```
 下面的代码是spi传输代码。
 ```
