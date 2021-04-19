@@ -165,3 +165,7 @@ ret = ioctl(fd, SPI_IOC_MESSAGE(1), &tr);
     2、防冲撞
     3、选卡
     4、三轮认证
+    
+在这个过程中，我们需要要知道两个概念，一个是PCD一个是PICC，PCD是用电感耦合给邻近卡提供能量并控制与邻近卡的数据交换的读/写设备，PICC一种卡型号，在通信过程中实际上是使用PCD命令控制RC522发出PICC命令与卡进行交互。具体的在这个链接里面还有 https://blog.csdn.net/wlwl0071986/article/details/48394297
+
+
