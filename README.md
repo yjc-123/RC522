@@ -165,7 +165,7 @@ ret = ioctl(fd, SPI_IOC_MESSAGE(1), &tr);
     2、防冲撞
     3、选卡
     4、三轮认证
-    
+    ![image](https://github.com/yjc-123/RC522/blob/master/images/2.png)
 在这个过程中，我们需要要知道两个概念，一个是PCD一个是PICC，PCD是用电感耦合给邻近卡提供能量并控制与邻近卡的数据交换的读/写设备，PICC一种卡型号，在通信过程中实际上是使用PCD命令控制RC522发出PICC命令与卡进行交互。具体的在这个链接里面还有 https://blog.csdn.net/wlwl0071986/article/details/48394297
 
 + rc522的构造图
@@ -174,4 +174,11 @@ ret = ioctl(fd, SPI_IOC_MESSAGE(1), &tr);
 
 上面这张图片就是rc522卡片结构图，可以看见有一个天线接口，作用是当卡片过来将磁信号转换为电信号，FIFO是内部缓存，我们写数据和读数据都是在这里进行，后面就是寄存器，然后就是跟主机通信，可以用i2c、spi、uart三种通信方式，本文用的spi。
 
++ rc522寄存器
+
+![image](https://github.com/yjc-123/RC522/blob/master/images/3.png)
+
+    1、其中第0扇区的块0是用于存放厂商代码的，已经固化，不可更改，为32位（4Bytes）；
+    2、每个扇区的块0、块1和块2位数据块，可用于存储数据，每块16个字节（只有S50卡是这样）；
+    3、每个扇区的块3位控制块，包含了密码A、存取控制、密码B，具体结构如下图所示；
 
