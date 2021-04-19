@@ -4,7 +4,7 @@ Rc522 card recognition based on SPI
 ### SPI
 ##### 1、简介
 SPI才用master/slave模式，一个master管理多个slave，通过SS片选信号实现主机控制某一个从机，SPI属于同步全双工传输协议。spi工作机制是master跟slave都有移位寄存器，也就是说master发送一位在FIFODATA中slave也会相应的发送一位到FIFODATA中，发送完一个字节之后，master发送完成，svale也相应的给FIFODATA写了一个字节，master直接读取就行了。但是真正读数据的时候data sheet中是这样告诉我们的
-https://github.com/yjc-123/RC522/blob/master/images/%E8%AF%BB.jpg
+！[image](https://github.com/yjc-123/RC522/blob/master/images/%E8%AF%BB.jpg)
 我们要先下寄存器，然后再发送一个字节，这个字节数据可以随意一般为0，才能够获取到数据。
 SPI有四根线分别是：
 + MOSI：Master Output Slave Input，顾名思义，即主设备输出/从设备输入。数据从主机输出到从机，主机发送数据。
