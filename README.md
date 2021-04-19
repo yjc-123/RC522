@@ -169,6 +169,7 @@ ret = ioctl(fd, SPI_IOC_MESSAGE(1), &tr);
 在这个过程中，我们需要要知道两个概念，一个是PCD一个是PICC，PCD是用电感耦合给邻近卡提供能量并控制与邻近卡的数据交换的读/写设备，PICC一种卡型号，在通信过程中实际上是使用PCD命令控制RC522发出PICC命令与卡进行交互。具体的在这个链接里面还有 https://blog.csdn.net/wlwl0071986/article/details/48394297
 
     `寻卡`
+    
     ```
     int rfid_request (unsigned char reg_code, unsigned char *card_type)
     {
@@ -198,7 +199,9 @@ ret = ioctl(fd, SPI_IOC_MESSAGE(1), &tr);
     } /* ----- End of rfid_request()  ----- */
     ```
     函数将我们的寻卡命令PICC_REQIDL装填如要发送的数组，通过PcdComMF522函数发送出去，如果此时在PCD有效范围内没有寻找到卡，则函数返回MI_ERR，若函数返回MI_OK，并且ulen为0x10（16bit）为两个字节则说明寻卡成功，返回的两字节被装填入CardRevBuf数组。
+    
     `防冲撞`
+    
     ```
     int rfid_anticoll (unsigned char *sernum)
     {
@@ -236,7 +239,9 @@ ret = ioctl(fd, SPI_IOC_MESSAGE(1), &tr);
     } /* ----- End of rfid_anticoll()  ----- */
     ```
      当我们发送93与0x20后，PICC返回5个字节其中前4个字节是UID，最后一个字节是校验它是4个先前字节的“异或”值。其中的过程我们是根据卡片的序列号不一样而决定的，具体过程自行搜索。
+     
      `选卡`
+     
      ```
      int rfid_select (unsigned char *sernum)
     {
@@ -274,7 +279,9 @@ ret = ioctl(fd, SPI_IOC_MESSAGE(1), &tr);
     } /* ----- End of rfid_select()  ----- */
      ```
      选卡发送了9个字节的数组，第一个是防冲撞PICC嘛，第二个是发送的值，数组的2-5是ID NUMBER，第6个是校验和，最后两个字节是选择操作。若发送成功，ID NUMBER相配对。那么就选定了这个卡了。如果不完整，PICC应保持READY状态并且PCD应以递增的串联级别来初始化新的防冲突环。
+     
      `认证`
+     
      ```
      int rfid_auth_state (unsigned char auth_mode, unsigned char addr, 
         unsigned char *key, unsigned char *sernum)
@@ -321,7 +328,9 @@ ret = ioctl(fd, SPI_IOC_MESSAGE(1), &tr);
 ![image](https://github.com/yjc-123/RC522/blob/master/images/222.png)
 
 所以我们选择了SEL为093表明串联级别1，NVB为0x20表明PCD发送字节数为整两个字节。
+
 ![image](https://github.com/yjc-123/RC522/blob/master/images/%E8%AE%A4%E8%AF%81.png)
+
  三次相互认证的令牌原理框图
     (A) 环：由MIFARE 1卡片向读写器发送一个随机数据RB。
     (B) 环：由读写器收到RB后向MIFARE 1卡片发送一个令牌数据TOKEN AB，其中包含了用读写器中存放的密码加密后的RB及读写器发出的一个随机数据RA。
