@@ -168,6 +168,168 @@ ret = ioctl(fd, SPI_IOC_MESSAGE(1), &tr);
     ![image](https://github.com/yjc-123/RC522/blob/master/images/2.png)
 在这个过程中，我们需要要知道两个概念，一个是PCD一个是PICC，PCD是用电感耦合给邻近卡提供能量并控制与邻近卡的数据交换的读/写设备，PICC一种卡型号，在通信过程中实际上是使用PCD命令控制RC522发出PICC命令与卡进行交互。具体的在这个链接里面还有 https://blog.csdn.net/wlwl0071986/article/details/48394297
 
+    `寻卡`
+    ```
+    int rfid_request (unsigned char reg_code, unsigned char *card_type)
+    {
+        int status;
+        unsigned int len_bit;
+        unsigned char com_buf[MAXRLEN];
+
+        clear_bit_mask(STATUS2_REG, 0x08);
+        write_reg(BIT_FRAMING_REG, 0x07);
+        set_bit_mask(TX_CONTROL_REG, 0x03);
+
+        com_buf[0] = reg_code;
+
+        status = rfid_com(PCD_TRANSCEIVE, com_buf, 1, com_buf, &len_bit);
+
+        if((status == MI_OK) && (len_bit == 0x10))
+        {
+            *card_type = com_buf[0];
+            *(card_type + 1) = com_buf[1]; 
+        }
+        else
+        {
+            status = MI_ERR;
+        }
+
+        return status;
+    } /* ----- End of rfid_request()  ----- */
+    ```
+    函数将我们的寻卡命令PICC_REQIDL装填如要发送的数组，通过PcdComMF522函数发送出去，如果此时在PCD有效范围内没有寻找到卡，则函数返回MI_ERR，若函数返回MI_OK，并且ulen为0x10（16bit）为两个字节则说明寻卡成功，返回的两字节被装填入CardRevBuf数组。
+    `防冲撞`
+    ```
+    int rfid_anticoll (unsigned char *sernum)
+    {
+        int           status       = 0;
+        unsigned char i            = 0;
+        unsigned char sernum_check = 0;
+        unsigned int  len;
+        unsigned char com_buf[MAXRLEN];
+
+        clear_bit_mask(STATUS2_REG, 0x08);
+        write_reg(BIT_FRAMING_REG, 0x00);
+        clear_bit_mask(COLL_REG, 0x80);
+
+        com_buf[0] = PICC_ANTICOLL1;
+        com_buf[1] = 0x20;
+
+        status = rfid_com(PCD_TRANSCEIVE, com_buf, 2, com_buf, &len);
+        if(status == MI_OK)
+        {
+            for(i = 0; i < 4; i++)
+            {
+                *(sernum + i) = com_buf[i];
+                sernum_check ^= com_buf[i];
+            }
+
+            if(sernum_check != com_buf[i])
+            {
+                status = MI_ERR;
+            }
+        }
+
+        set_bit_mask(COLL_REG, 0x80);
+
+        return status;
+    } /* ----- End of rfid_anticoll()  ----- */
+    ```
+     当我们发送93与0x20后，PICC返回5个字节其中前4个字节是UID，最后一个字节是校验它是4个先前字节的“异或”值。其中的过程我们是根据卡片的序列号不一样而决定的，具体过程自行搜索。
+     `选卡`
+     ```
+     int rfid_select (unsigned char *sernum)
+    {
+        int             status = 0;
+        unsigned char   i; 
+        unsigned int    len_bit;
+        unsigned char   com_buf[MAXRLEN];
+
+        com_buf[0] = PICC_ANTICOLL1;
+        com_buf[1] = 0x70;
+        com_buf[6] = 0;
+
+        for(i = 0; i < 4; i++)
+        {
+            com_buf[i + 2]  = *(sernum + i);
+            com_buf[6]     ^= *(sernum + i);
+        }
+
+        calulatate_crc(com_buf, 7, &com_buf[7]);
+
+        clear_bit_mask(STATUS2_REG, 0x08);
+
+        status = rfid_com(PCD_TRANSCEIVE, com_buf, 9, com_buf, &len_bit);
+
+        if((status == MI_OK) && (len_bit == 0x18))
+        {
+            status = (int)com_buf[0];
+        }
+        else
+        {
+            status =MI_ERR;
+        }
+
+        return status;
+    } /* ----- End of rfid_select()  ----- */
+     ```
+     选卡发送了9个字节的数组，第一个是防冲撞PICC嘛，第二个是发送的值，数组的2-5是ID NUMBER，第6个是校验和，最后两个字节是选择操作。若发送成功，ID NUMBER相配对。那么就选定了这个卡了。如果不完整，PICC应保持READY状态并且PCD应以递增的串联级别来初始化新的防冲突环。
+     `认证`
+     ```
+     int rfid_auth_state (unsigned char auth_mode, unsigned char addr, 
+        unsigned char *key, unsigned char *sernum)
+    {
+        int             status      = 0;
+        unsigned int    len_bit     = 0;
+        unsigned char   reg_val     = 0;
+        unsigned char   com_buf[MAXRLEN];
+
+        /* 验证指令 + 块地址 + 扇区密码 + 卡序列号 */
+        com_buf[0] = auth_mode;
+        com_buf[1] = addr;
+
+        memcpy(&com_buf[2], key, 6);
+        memcpy(&com_buf[8], sernum, 6);
+
+        status = rfid_com(PCD_AUTHENT, com_buf, 12, com_buf, &len_bit);
+        reg_val = read_reg(STATUS2_REG);
+        if((status != MI_OK) || (!(reg_val & 0x08)))
+        {
+            status = MI_ERR;
+        }
+
+        return status;
+    } /* ----- End of rfid_auth_state()  ----- */
+     ```
+    步骤1：PCD为选择的防冲突类型和串联级别分配了带有编码的SEL。
+    步骤2：PCD分配了带有值为‘20’的NVB。
+    步骤3：PCD发送SEL和NVB。
+    步骤4：工作场内的所有PICC应使用它们的完整的UID CLn响应。
+    步骤5：假设场内的PICC拥有唯一序列号，那么，如果一个以上的PICC响应，则冲突发生。如果没有冲突发生，则步骤6到步骤10可被跳过。
+    步骤6：PCD应识别出第一个冲突的位置。
+    步骤7：PCD分配了带有值的NVB，该值规定了UID CLn有效比特数。这些有效位应是PCD所决定的冲突发生之前被接收到的UID CLn的一部分再加上(0)b或(1)b。典型的实现是增加(1)b。
+    步骤8：PCD发送SEL和NVB，后随有效位本身。
+    步骤9：只有PICC的UID CLn中的一部分等于PCD所发送的有效位时，PICC才应发送其UID CLn的其余部分。
+    步骤10：如果出现进一步的冲突，则重复步骤6~9。最大的环数目是32。
+    步骤11：如果不出现进一步的冲突，则PCD分配带有值为‘70’的NVB。
+    步骤12：PCD发送SEL和NVB，后随UID CLn的所有40个位，后面又紧跟CRC_A校验和。
+    步骤13：它的UID CLn与40个比特匹配，则该PICC以其SAK表示响应。
+    步骤14：如果UID完整，则PICC应发送带有清空的串联级别位的SAK，并从READY状态转换到ACTIVE状态。
+    步骤15：PCD应检验SAK（选择确认）的串联比特是否被设置，以决定带有递增串联级别的进一步防冲突环是否应继续进行。
+注意：这里讲解一下上面的SEL和NVB是什么，我们前面说了，防冲撞的时候发送了两个字节过去，然后得到了4个字节的ID NUMBER,即PICC_ANTICOLL1 （0x93），第二个字节为0x20，SEL规定了串联级别CLn，NVB规定了PCD所发送的CLn的有效位的数目。
+![image](https://github.com/yjc-123/RC522/blob/master/images/111.png)
+![image](https://github.com/yjc-123/RC522/blob/master/images/222.png)
+
+所以我们选择了SEL为093表明串联级别1，NVB为0x20表明PCD发送字节数为整两个字节。
+![image](https://github.com/yjc-123/RC522/blob/master/images/%E8%AE%A4%E8%AF%81.png)
+ 三次相互认证的令牌原理框图
+    (A) 环：由MIFARE 1卡片向读写器发送一个随机数据RB。
+    (B) 环：由读写器收到RB后向MIFARE 1卡片发送一个令牌数据TOKEN AB，其中包含了用读写器中存放的密码加密后的RB及读写器发出的一个随机数据RA。
+    (C) 环：MIFARE 1卡片收到 TOKEN AB 后，用卡中的密码对TOKEN AB的加密的部分进行解密得到RB'，并校验第一次由(A)环中MIFARE 1卡片发出去的随机数RB是否与(B)环中接收到的TOKEN AB中的RB'相一致；若读写器与卡中的密码及加密/解密算法一致，将会有RB=RB'，校验正确，否则将无法通过校验。
+    (D) 环：如果(C)环校验是正确的，则MIFARE 1卡片用卡中存放的密码对RA加密后发送令牌TOKEN BA给读写器。 
+    (E) 环：读写器收到令牌TOKEN BA后，用读写器中存放的密码对令牌TOKEN BA中的RA(随机数)进行解密得到RA'；并校验第一次由(B)环中读写器发出去的随机数RA是否与(D)环中接收到的TOKEN BA中的RA' 相一致；同样，若读写器与卡中的密码及加密/解密算法一致，将会有RA=RA'，校验正确，否则将无法通过校验。
+    如果上述的每一个环都为“真”，且都能正确通过验证，则整个的认证过程将成功。读写器将允许对刚刚认证通过的卡片上的这个扇区进入下一步的操作(读/写等操作)。
+
 + rc522的构造图
 
 ![image](https://github.com/yjc-123/RC522/blob/master/images/1.jpg) 
@@ -178,7 +340,8 @@ ret = ioctl(fd, SPI_IOC_MESSAGE(1), &tr);
 
 ![image](https://github.com/yjc-123/RC522/blob/master/images/3.png)
 
-    1、其中第0扇区的块0是用于存放厂商代码的，已经固化，不可更改，为32位（4Bytes）；
+    1、其中第0扇区的块0是用于存放厂商代码的，已经固化，不可更改，为32位（4Bytes），我们获取ID NUMBER的时候就是获取的这个ID；
     2、每个扇区的块0、块1和块2位数据块，可用于存储数据，每块16个字节（只有S50卡是这样）；
     3、每个扇区的块3位控制块，包含了密码A、存取控制、密码B，具体结构如下图所示；
+
 
